@@ -2,6 +2,7 @@ package net.atos.reader;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.rabbit.annotation.RabbitHandler;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -15,8 +16,8 @@ public class Reader {
     Logger logger = LoggerFactory.getLogger(Reader.class);
 
     @RabbitListener(queues = "${QUEUE}")
-    public void readMessageFromQueue(Message msg){
+    public void readMessageFromQueue(String msg){
 
-        logger.info("Received: " + msg.getMessageID() + ", " + msg.getMessage());
+        logger.info("Received: " + msg);
     }
 }
