@@ -9,14 +9,13 @@ import io.netty.channel.Channel;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.ToString;
-import org.springframework.amqp.core.Queue;
-import org.springframework.beans.factory.annotation.Value;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -27,9 +26,9 @@ import java.util.stream.Collectors;
 public class FileReader {
 
     private Channel channel;
-
-    @Value("${BATCH_SIZE}")
-    public int BATCH_SIZE;
+    private int batch_size;
+    private char separator;
+    List<String> extensions;
 
     public List<File> getFilesFromFolder(String folderName) {
 
@@ -40,49 +39,40 @@ public class FileReader {
             fileList = Files.walk(Paths.get(folderName))
                     .filter(Files::isRegularFile)
                     .map(Path::toFile)
+                    .filter(f -> doesEndWith(f, extensions))
                     .collect(Collectors.toList());
         } catch (IOException e){
 
             e.printStackTrace();
         }
 
-        // Dodac sprawdzanie rozszerzen plikow (zeby mialy csv i tsv)
-
         return fileList;
     }
 
-    public List<Map<?, ?>> readFromFile(File inFile) {
+    private static boolean doesEndWith(File file, List<String> extensions) {
 
-        List<Map<?, ?>> list = null;
-
-        try {
-
-            CsvSchema csv = CsvSchema.emptySchema().withHeader();
-            CsvMapper csvMapper = new CsvMapper();
-
-            MappingIterator<Map<?, ?>> mappingIterator =  csvMapper.reader().forType(Map.class).with(csv).readValues(inFile);
-
-            list = mappingIterator.readAll();
-
-        } catch(Exception e) {
-            e.printStackTrace();
+        boolean result = false;
+        for (String fileExtension : extensions) {
+            if (file.getName().endsWith(fileExtension)) {
+                result = true;
+                break;
+            }
         }
-
-        return list;
+        return result;
     }
 
     public void readBatchFromFile(File inFile) {
 
-        List<Map<?, ?>> toSend = null;
+        List<Map<?, ?>> toSend = new ArrayList<Map<?, ?>>();;
 
         try {
 
-            CsvSchema csv = CsvSchema.emptySchema().withHeader();
+            CsvSchema csv = CsvSchema.emptySchema().withHeader().withColumnSeparator(separator);
             CsvMapper csvMapper = new CsvMapper();
 
             MappingIterator<Map<?, ?>> mappingIterator =  csvMapper.reader().forType(Map.class).with(csv).readValues(inFile);
 
-            int counter = BATCH_SIZE;
+            int counter = batch_size;
 
             while (mappingIterator.hasNextValue()) {
 
@@ -90,20 +80,22 @@ public class FileReader {
 
                     toSend.add(mappingIterator.nextValue());
                     counter -= 1;
-                }
+                } else {
 
-                channel.write(toJSON(toSend));
-                toSend.clear();
-                counter = BATCH_SIZE;
+                    channel.writeAndFlush(toJSON(toSend));
+                   // System.out.println(toJSON(toSend));
+                   // System.out.println("Sent to server");
+                    toSend.clear();
+                    counter = batch_size;
+                }
             }
 
             if (!toSend.isEmpty()) {
 
-                channel.write(toJSON(toSend));
+                channel.writeAndFlush(toJSON(toSend));
+               // System.out.println(toJSON(toSend));
                 toSend.clear();
             }
-
-           // channel.flush();
 
         } catch(Exception e) {
             e.printStackTrace();
